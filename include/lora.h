@@ -56,6 +56,7 @@ typedef struct {
     bool     invert_iq;                   // Invert IQ enabled/disabled
     bool     low_data_rate_optimization;  // Low data rate optimization enabled/disabled
     bool     rx_boost;                    // Boosted RX gain (+3 dB sensitivity, +~2 mA)
+    bool     use_dcdc;                    // Enable DC-DC converter
 } __attribute__((packed)) lora_protocol_config_params_t;
 
 typedef struct {

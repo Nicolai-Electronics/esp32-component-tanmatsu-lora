@@ -674,9 +674,9 @@ esp_err_t lora_get_config(lora_handle_t* handle, lora_protocol_config_params_t* 
 }
 
 static esp_err_t lora_radio_apply_config(lora_handle_t* handle, const lora_protocol_config_params_t* config_params) {
-    esp_err_t res = sx126x_set_regulator_mode(&handle->driver_handle, true);  // Use DC-DC
+    esp_err_t res = sx126x_set_regulator_mode(&handle->driver_handle, config_params->use_dcdc);
     if (res != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to set LoRa regulator mode to DC-DC: %s", esp_err_to_name(res));
+        ESP_LOGE(TAG, "Failed to set LoRa regulator mode: %s", esp_err_to_name(res));
         return res;
     }
 
