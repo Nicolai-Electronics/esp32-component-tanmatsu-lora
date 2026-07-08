@@ -773,7 +773,7 @@ static esp_err_t lora_radio_apply_config(lora_handle_t* handle, const lora_proto
             return ESP_ERR_INVALID_ARG;
     }
 
-    res = sx126x_set_modulation_params_lora(&handle->driver_handle, spreading_factor, bandwidth, coding_rate,
+    res = sx126x_set_modulation_params_lora(&handle->driver_handle, spreading_factor, bandwidth, coding_rate, true,
                                             config_params->low_data_rate_optimization);
     if (res != ESP_OK) {
         ESP_LOGE(TAG, "Failed to set LoRa modulation parameters: %s", esp_err_to_name(res));
@@ -910,12 +910,6 @@ esp_err_t lora_set_config(lora_handle_t* handle, const lora_protocol_config_para
         }
     } else {
         memcpy(&handle->lora_config, config, sizeof(lora_protocol_config_params_t));
-
-        // Auto-enforce LDRO per SX126x datasheet: required when symbol duration > 16ms
-        // T_sym_ms = 2^SF / BW_kHz. Threshold: 2^SF / BW_kHz > 16 → 2^SF > 16 * BW_kHz
-        if (((uint32_t)(1U << config->spreading_factor) > 16U * config->bandwidth)) {
-            handle->lora_config.low_data_rate_optimization = true;
-        }
         return lora_radio_apply_config(handle, config);
     }
     return ESP_OK;
