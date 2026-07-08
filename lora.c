@@ -318,6 +318,47 @@ static esp_err_t lora_initialize_radio(lora_handle_t* handle) {
     return ESP_OK;
 }
 
+static sx126x_lora_bandwidth_t bandwidth_int_to_enum(uint16_t bandwidth_int) {
+    sx126x_lora_bandwidth_t bandwidth;
+    switch (bandwidth_int) {
+        case 7:
+            bandwidth = SX126X_LORA_BANDWIDTH_7;
+            break;
+        case 10:
+            bandwidth = SX126X_LORA_BANDWIDTH_10;
+            break;
+        case 15:
+            bandwidth = SX126X_LORA_BANDWIDTH_15;
+            break;
+        case 20:
+            bandwidth = SX126X_LORA_BANDWIDTH_20;
+            break;
+        case 31:
+            bandwidth = SX126X_LORA_BANDWIDTH_31;
+            break;
+        case 41:
+            bandwidth = SX126X_LORA_BANDWIDTH_41;
+            break;
+        case 62:
+            bandwidth = SX126X_LORA_BANDWIDTH_62;
+            break;
+        case 125:
+            bandwidth = SX126X_LORA_BANDWIDTH_125;
+            break;
+        case 250:
+            bandwidth = SX126X_LORA_BANDWIDTH_250;
+            break;
+        case 500:
+            bandwidth = SX126X_LORA_BANDWIDTH_500;
+            break;
+        default:
+            // Fallback to 125kHz for invalid values
+            bandwidth = SX126X_LORA_BANDWIDTH_125;
+            break;
+    }
+    return bandwidth;
+}
+
 static void lora_radio_read_data(lora_handle_t* handle) {
     static lora_protocol_lora_packet_t lora_packet   = {0};
     uint8_t                            start_pointer = 0;
@@ -343,6 +384,14 @@ static void lora_radio_read_data(lora_handle_t* handle) {
     if (res != ESP_OK) {
         ESP_LOGE(TAG, "Failed to read packet from LoRa radio: %s", esp_err_to_name(res));
         return;
+    }
+
+    float frequency_error_hz = 0;
+    res = sx126x_get_lora_frequency_error(&handle->driver_handle, bandwidth_int_to_enum(handle->lora_config.bandwidth), &frequency_error_hz);
+    if (res != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to read frequency error from LoRa radio: %s", esp_err_to_name(res));
+    } else {
+        ESP_LOGI(TAG, "Measured frequency error on received packet: %f Hz", frequency_error_hz);
     }
 
     if (xQueueSend(handle->lora_packet_queue, &lora_packet, 0) != pdPASS) {
@@ -388,7 +437,6 @@ static void lora_radio_task(void* pvParameters) {
 
         switch (command_status) {
             case SX126X_COMMAND_STATUS_DATA_AVAILABLE:
-                printf("Data available!\r\n");
                 lora_radio_read_data(handle);
 
                 while (1) {
