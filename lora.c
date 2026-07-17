@@ -1360,6 +1360,7 @@ esp_err_t lora_set_frequency_offset(lora_handle_t* handle, float offset) {
         }
     } else {
         handle->applied_frequency_offset_hz = offset;
+        return update_rf_frequency(handle);
     }
     return ESP_OK;
 }
