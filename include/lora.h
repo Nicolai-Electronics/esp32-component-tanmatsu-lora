@@ -11,6 +11,7 @@
 // Protocol definitions for LoRa over SDIO using ESP32 running modified ESP-HOSTED
 
 #define LORA_PROTOCOL_VERSION_STRING_LENGTH 16
+#define LORA_FREQUENCY_ERROR_HISTORY_LENGTH 32
 
 typedef enum {
     LORA_PROTOCOL_TYPE_ACK                 = 0x00,
@@ -58,6 +59,7 @@ typedef struct {
     bool     low_data_rate_optimization;  // Low data rate optimization enabled/disabled
     bool     rx_boost;                    // Boosted RX gain (+3 dB sensitivity, +~2 mA)
     bool     use_dcdc;                    // Enable DC-DC converter
+    bool     use_automatic_correction;    // Enable automatic frequency correction
 } __attribute__((packed)) lora_protocol_config_params_t;
 
 typedef struct {
@@ -87,6 +89,7 @@ typedef struct {
 
 typedef struct {
     float last_frequency_error_hz;
+    float local_oscillator_offset_hz;
 } __attribute__((packed)) lora_protocol_frequency_error_params_t;
 
 typedef struct {
@@ -115,7 +118,11 @@ typedef struct {
     size_t  lora_packet_size;
 
     // Frequency offset
-    float last_frequency_error_hz;
+    float   last_frequency_error_hz;
+    float   frequency_error_history[LORA_FREQUENCY_ERROR_HISTORY_LENGTH];  // Circular buffer for moving average
+    uint8_t frequency_error_history_index;                                 // Next slot to write in the buffer
+    uint8_t frequency_error_history_count;  // Number of valid samples (until buffer fills up)
+    float   local_oscillator_offset_hz;     // Moving average of the frequency error over the last packets
 } lora_handle_t;
 
 // Functions
@@ -138,4 +145,5 @@ esp_err_t lora_receive_packet(lora_handle_t* handle, lora_protocol_lora_packet_t
 
 esp_err_t lora_get_rssi_inst(lora_handle_t* handle, float* out_rssi);
 
-esp_err_t lora_get_frequency_error(lora_handle_t* handle, float* out_frequency_error);
+esp_err_t lora_get_frequency_error(lora_handle_t* handle, float* out_frequency_error,
+                                   float* out_local_oscillator_offset);

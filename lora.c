@@ -1,4 +1,5 @@
 #include "lora.h"
+#include <math.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <string.h>
@@ -359,6 +360,42 @@ static sx126x_lora_bandwidth_t bandwidth_int_to_enum(uint16_t bandwidth_int) {
     return bandwidth;
 }
 
+static esp_err_t update_rf_frequency(lora_handle_t* handle) {
+    uint32_t target = handle->lora_config.frequency;
+    if (handle->lora_config.use_automatic_correction) {
+        target += handle->local_oscillator_offset_hz;
+    }
+    return sx126x_set_rf_frequency(&handle->driver_handle, target);
+}
+
+static void update_local_oscillator_offset(lora_handle_t* handle) {
+    // Insert the latest sample into the circular history buffer
+    handle->frequency_error_history[handle->frequency_error_history_index] = handle->last_frequency_error_hz;
+    handle->frequency_error_history_index =
+        (handle->frequency_error_history_index + 1) % LORA_FREQUENCY_ERROR_HISTORY_LENGTH;
+    if (handle->frequency_error_history_count < LORA_FREQUENCY_ERROR_HISTORY_LENGTH) {
+        handle->frequency_error_history_count++;
+    }
+
+    // Recompute the moving average over the samples collected so far
+    float sum = 0;
+    for (uint8_t i = 0; i < handle->frequency_error_history_count; i++) {
+        sum += handle->frequency_error_history[i];
+    }
+    handle->local_oscillator_offset_hz = sum / (float)handle->frequency_error_history_count;
+
+    float offset_threshold = 0.1 * (handle->lora_config.bandwidth * 1000);
+
+    if (handle->lora_config.use_automatic_correction) {
+        if (fabs(handle->local_oscillator_offset_hz) >= offset_threshold) {
+            ESP_LOGW(TAG,
+                     "LoRa oscillator offset is %0.2f Hz, above %0.2f Hz threshold. Correcting frequency setpoint...",
+                     fabs(handle->local_oscillator_offset_hz), offset_threshold);
+            update_rf_frequency(handle);
+        }
+    }
+}
+
 static void lora_radio_read_data(lora_handle_t* handle) {
     static lora_protocol_lora_packet_t lora_packet   = {0};
     uint8_t                            start_pointer = 0;
@@ -399,6 +436,8 @@ static void lora_radio_read_data(lora_handle_t* handle) {
     } else {
         ESP_LOGI(TAG, "Measured frequency error on received packet: %f Hz", handle->last_frequency_error_hz);
     }
+
+    update_local_oscillator_offset(handle);
 
     if (xQueueSend(handle->lora_packet_queue, &lora_packet, 0) != pdPASS) {
         ESP_LOGW(TAG, "Incoming LoRa packet dropped, queue full");
@@ -727,21 +766,21 @@ esp_err_t lora_get_config(lora_handle_t* handle, lora_protocol_config_params_t* 
     return ESP_OK;
 }
 
-static esp_err_t lora_radio_apply_config(lora_handle_t* handle, const lora_protocol_config_params_t* config_params) {
-    esp_err_t res = sx126x_set_regulator_mode(&handle->driver_handle, config_params->use_dcdc);
+static esp_err_t lora_radio_apply_config(lora_handle_t* handle) {
+    esp_err_t res = sx126x_set_regulator_mode(&handle->driver_handle, handle->lora_config.use_dcdc);
     if (res != ESP_OK) {
         ESP_LOGE(TAG, "Failed to set LoRa regulator mode: %s", esp_err_to_name(res));
         return res;
     }
 
-    res = sx126x_set_rf_frequency(&handle->driver_handle, config_params->frequency);
+    res = update_rf_frequency(handle);
     if (res != ESP_OK) {
         ESP_LOGE(TAG, "Failed to set LoRa RF frequency: %s", esp_err_to_name(res));
         return res;
     }
 
     sx126x_lora_spreading_factor_t spreading_factor;
-    switch (config_params->spreading_factor) {
+    switch (handle->lora_config.spreading_factor) {
         case 5:
             spreading_factor = SX126X_LORA_SPREADING_FACTOR_5;
             break;
@@ -767,12 +806,12 @@ static esp_err_t lora_radio_apply_config(lora_handle_t* handle, const lora_proto
             spreading_factor = SX126X_LORA_SPREADING_FACTOR_12;
             break;
         default:
-            ESP_LOGW(TAG, "Invalid spreading factor: %d", config_params->spreading_factor);
+            ESP_LOGW(TAG, "Invalid spreading factor: %d", handle->lora_config.spreading_factor);
             return ESP_ERR_INVALID_ARG;
     }
 
     sx126x_lora_bandwidth_t bandwidth;
-    switch (config_params->bandwidth) {
+    switch (handle->lora_config.bandwidth) {
         case 7:
             bandwidth = SX126X_LORA_BANDWIDTH_7;
             break;
@@ -804,12 +843,12 @@ static esp_err_t lora_radio_apply_config(lora_handle_t* handle, const lora_proto
             bandwidth = SX126X_LORA_BANDWIDTH_500;
             break;
         default:
-            ESP_LOGW(TAG, "Invalid bandwidth: %d kHz", config_params->bandwidth);
+            ESP_LOGW(TAG, "Invalid bandwidth: %d kHz", handle->lora_config.bandwidth);
             return ESP_ERR_INVALID_ARG;
     }
 
     sx126x_lora_coding_rate_t coding_rate;
-    switch (config_params->coding_rate) {
+    switch (handle->lora_config.coding_rate) {
         case 5:
             coding_rate = SX126X_LORA_CODING_RATE_4_5;
             break;
@@ -823,25 +862,25 @@ static esp_err_t lora_radio_apply_config(lora_handle_t* handle, const lora_proto
             coding_rate = SX126X_LORA_CODING_RATE_4_8;
             break;
         default:
-            ESP_LOGW(TAG, "Invalid coding rate: 4/%d", config_params->coding_rate);
+            ESP_LOGW(TAG, "Invalid coding rate: 4/%d", handle->lora_config.coding_rate);
             return ESP_ERR_INVALID_ARG;
     }
 
     res = sx126x_set_modulation_params_lora(&handle->driver_handle, spreading_factor, bandwidth, coding_rate, true,
-                                            config_params->low_data_rate_optimization);
+                                            handle->lora_config.low_data_rate_optimization);
     if (res != ESP_OK) {
         ESP_LOGE(TAG, "Failed to set LoRa modulation parameters: %s", esp_err_to_name(res));
         return res;
     }
 
-    res = sx126x_set_packet_params_lora_variable_length(&handle->driver_handle, config_params->preamble_length,
-                                                        config_params->crc_enabled, config_params->invert_iq);
+    res = sx126x_set_packet_params_lora_variable_length(&handle->driver_handle, handle->lora_config.preamble_length,
+                                                        handle->lora_config.crc_enabled, handle->lora_config.invert_iq);
     if (res != ESP_OK) {
         ESP_LOGE(TAG, "Failed to set LoRa packet parameters: %s", esp_err_to_name(res));
         return res;
     }
 
-    res = sx126x_set_sync_word(&handle->driver_handle, config_params->sync_word);
+    res = sx126x_set_sync_word(&handle->driver_handle, handle->lora_config.sync_word);
     if (res != ESP_OK) {
         ESP_LOGE(TAG, "Failed to set LoRa sync word and control bits: %s", esp_err_to_name(res));
         return res;
@@ -859,8 +898,8 @@ static esp_err_t lora_radio_apply_config(lora_handle_t* handle, const lora_proto
 
     bool pa_is_high_power = true;
 
-    res =
-        sx126x_set_tx_params(&handle->driver_handle, config_params->power, pa_is_high_power, config_params->ramp_time);
+    res = sx126x_set_tx_params(&handle->driver_handle, handle->lora_config.power, pa_is_high_power,
+                               handle->lora_config.ramp_time);
     if (res != ESP_OK) {
         ESP_LOGE(TAG, "Failed to set LoRa TX parameters: %s", esp_err_to_name(res));
         return res;
@@ -886,7 +925,7 @@ static esp_err_t lora_radio_apply_config(lora_handle_t* handle, const lora_proto
 
     // RX gain mode (SX1262 datasheet section 9.6, RxGain register 0x08AC):
     // 0x96 = boosted (+3 dB sensitivity, +~2 mA), 0x94 = power-saving default.
-    uint8_t rx_gain = config_params->rx_boost ? 0x96 : 0x94;
+    uint8_t rx_gain = handle->lora_config.rx_boost ? 0x96 : 0x94;
     res             = sx126x_write_register(&handle->driver_handle, 0x08AC, &rx_gain, 1);
     if (res != ESP_OK) {
         ESP_LOGE(TAG, "Failed to set LoRa RX gain: %s", esp_err_to_name(res));
@@ -964,7 +1003,7 @@ esp_err_t lora_set_config(lora_handle_t* handle, const lora_protocol_config_para
         }
     } else {
         memcpy(&handle->lora_config, config, sizeof(lora_protocol_config_params_t));
-        return lora_radio_apply_config(handle, config);
+        return lora_radio_apply_config(handle);
     }
     return ESP_OK;
 }
@@ -1215,8 +1254,9 @@ esp_err_t lora_get_rssi_inst(lora_handle_t* handle, float* out_rssi) {
     }
 }
 
-esp_err_t lora_get_frequency_error(lora_handle_t* handle, float* out_frequency_error) {
-    if (out_frequency_error == NULL) {
+esp_err_t lora_get_frequency_error(lora_handle_t* handle, float* out_frequency_error,
+                                   float* out_local_oscillator_offset) {
+    if (handle == NULL) {
         return ESP_ERR_INVALID_ARG;
     }
     if (handle == remote_handle) {
@@ -1250,10 +1290,19 @@ esp_err_t lora_get_frequency_error(lora_handle_t* handle, float* out_frequency_e
         }
         lora_protocol_frequency_error_params_t* params =
             (lora_protocol_frequency_error_params_t*)(response + sizeof(lora_protocol_header_t));
-        *out_frequency_error = params->last_frequency_error_hz;
-        return ESP_OK;
+        if (out_frequency_error != NULL) {
+            *out_frequency_error = params->last_frequency_error_hz;
+        }
+        if (out_local_oscillator_offset != NULL) {
+            *out_local_oscillator_offset = params->local_oscillator_offset_hz;
+        }
     } else {
-        *out_frequency_error = handle->last_frequency_error_hz;
+        if (out_frequency_error != NULL) {
+            *out_frequency_error = handle->last_frequency_error_hz;
+        }
+        if (out_local_oscillator_offset != NULL) {
+            *out_local_oscillator_offset = handle->local_oscillator_offset_hz;
+        }
     }
     return ESP_OK;
 }
