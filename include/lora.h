@@ -90,6 +90,7 @@ typedef struct {
 typedef struct {
     float last_frequency_error_hz;
     float local_oscillator_offset_hz;
+    float applied_frequency_offset_hz;
 } __attribute__((packed)) lora_protocol_frequency_error_params_t;
 
 typedef struct {
@@ -123,6 +124,7 @@ typedef struct {
     uint8_t frequency_error_history_index;                                 // Next slot to write in the buffer
     uint8_t frequency_error_history_count;  // Number of valid samples (until buffer fills up)
     float   local_oscillator_offset_hz;     // Moving average of the frequency error over the last packets
+    float   applied_frequency_offset_hz;    // Currently applied offset
 } lora_handle_t;
 
 // Functions
@@ -146,4 +148,4 @@ esp_err_t lora_receive_packet(lora_handle_t* handle, lora_protocol_lora_packet_t
 esp_err_t lora_get_rssi_inst(lora_handle_t* handle, float* out_rssi);
 
 esp_err_t lora_get_frequency_error(lora_handle_t* handle, float* out_frequency_error,
-                                   float* out_local_oscillator_offset);
+                                   float* out_local_oscillator_offset, float* out_applied_offset);

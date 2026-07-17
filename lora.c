@@ -363,7 +363,13 @@ static sx126x_lora_bandwidth_t bandwidth_int_to_enum(uint16_t bandwidth_int) {
 static esp_err_t update_rf_frequency(lora_handle_t* handle) {
     uint32_t target = handle->lora_config.frequency;
     if (handle->lora_config.use_automatic_correction) {
-        target += handle->local_oscillator_offset_hz;
+        // Update the required offset with the currently measured offset
+        handle->applied_frequency_offset_hz += handle->local_oscillator_offset_hz;
+
+        ESP_LOGI(TAG, "LoRa frequency offset: %0.2f Hz", handle->applied_frequency_offset_hz);
+
+        // Add the offset to the target frequency
+        target += handle->applied_frequency_offset_hz;
     }
     return sx126x_set_rf_frequency(&handle->driver_handle, target);
 }
@@ -464,7 +470,7 @@ static void lora_radio_task(void* pvParameters) {
 
         // if (interrupts & SX126X_IRQ_TX_DONE) printf("Interrupt: TX done\r\n");
         // if (interrupts & SX126X_IRQ_RX_DONE) printf("Interrupt: RX done\r\n");
-        if (interrupts & SX126X_IRQ_PREAMBLE_DETECTED) printf("Interrupt: preamble detected\r\n");
+        /*if (interrupts & SX126X_IRQ_PREAMBLE_DETECTED) printf("Interrupt: preamble detected\r\n");
         if (interrupts & SX126X_IRQ_SYNC_WORD_VALID) printf("Interrupt: sync word valid\r\n");
         if (interrupts & SX126X_IRQ_HEADER_VALID) printf("Interrupt: header valid\r\n");
         if (interrupts & SX126X_IRQ_HEADER_ERROR) printf("Interrupt: header error\r\n");
@@ -472,7 +478,7 @@ static void lora_radio_task(void* pvParameters) {
         if (interrupts & SX126X_IRQ_CAD_DONE) printf("Interrupt: cad done\r\n");
         if (interrupts & SX126X_IRQ_CAD_DETECTED) printf("Interrupt: cad detected\r\n");
         if (interrupts & SX126X_IRQ_TIMEOUT) printf("Interrupt: timeout\r\n");
-        if (interrupts & SX126X_IRQ_LRFHSSHOP) printf("Interrupt: lrhsshop\r\n");
+        if (interrupts & SX126X_IRQ_LRFHSSHOP) printf("Interrupt: lrhsshop\r\n");*/
 
         res = sx126x_clear_irq_status(&handle->driver_handle, SX126X_IRQ_ALL);
         if (res != ESP_OK) {
@@ -1255,7 +1261,7 @@ esp_err_t lora_get_rssi_inst(lora_handle_t* handle, float* out_rssi) {
 }
 
 esp_err_t lora_get_frequency_error(lora_handle_t* handle, float* out_frequency_error,
-                                   float* out_local_oscillator_offset) {
+                                   float* out_local_oscillator_offset, float* out_applied_offset) {
     if (handle == NULL) {
         return ESP_ERR_INVALID_ARG;
     }
@@ -1273,19 +1279,19 @@ esp_err_t lora_get_frequency_error(lora_handle_t* handle, float* out_frequency_e
         }
         lora_protocol_header_t* header = (lora_protocol_header_t*)response;
         if (header->sequence_number != request.sequence_number) {
-            ESP_LOGE(TAG, "RSSI inst: response with unexpected sequence number %u", header->sequence_number);
+            ESP_LOGE(TAG, "Get frequency error: response with unexpected sequence number %u", header->sequence_number);
             return ESP_FAIL;
         }
         if (header->type == LORA_PROTOCOL_TYPE_NACK) {
-            ESP_LOGE(TAG, "RSSI inst: received error response");
+            ESP_LOGE(TAG, "Get frequency error: received error response");
             return ESP_FAIL;
         }
         if (header->type != LORA_PROTOCOL_TYPE_GET_FREQUENCY_ERROR) {
-            ESP_LOGE(TAG, "RSSI inst: response with unexpected type %u", header->type);
+            ESP_LOGE(TAG, "Get frequency error: response with unexpected type %u", header->type);
             return ESP_FAIL;
         }
         if (response_length < sizeof(lora_protocol_header_t) + sizeof(lora_protocol_frequency_error_params_t)) {
-            ESP_LOGE(TAG, "RSSI inst: response with unexpected length");
+            ESP_LOGE(TAG, "Get frequency error: response with unexpected length");
             return ESP_FAIL;
         }
         lora_protocol_frequency_error_params_t* params =
@@ -1296,12 +1302,18 @@ esp_err_t lora_get_frequency_error(lora_handle_t* handle, float* out_frequency_e
         if (out_local_oscillator_offset != NULL) {
             *out_local_oscillator_offset = params->local_oscillator_offset_hz;
         }
+        if (out_applied_offset != NULL) {
+            *out_applied_offset = params->applied_frequency_offset_hz;
+        }
     } else {
         if (out_frequency_error != NULL) {
             *out_frequency_error = handle->last_frequency_error_hz;
         }
         if (out_local_oscillator_offset != NULL) {
             *out_local_oscillator_offset = handle->local_oscillator_offset_hz;
+        }
+        if (out_applied_offset != NULL) {
+            *out_applied_offset = handle->applied_frequency_offset_hz;
         }
     }
     return ESP_OK;
