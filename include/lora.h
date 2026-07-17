@@ -13,16 +13,17 @@
 #define LORA_PROTOCOL_VERSION_STRING_LENGTH 16
 
 typedef enum {
-    LORA_PROTOCOL_TYPE_ACK           = 0x00,
-    LORA_PROTOCOL_TYPE_NACK          = 0x01,
-    LORA_PROTOCOL_TYPE_GET_MODE      = 0x02,
-    LORA_PROTOCOL_TYPE_SET_MODE      = 0x03,
-    LORA_PROTOCOL_TYPE_GET_CONFIG    = 0x04,
-    LORA_PROTOCOL_TYPE_SET_CONFIG    = 0x05,
-    LORA_PROTOCOL_TYPE_GET_STATUS    = 0x06,
-    LORA_PROTOCOL_TYPE_PACKET_RX     = 0x07,
-    LORA_PROTOCOL_TYPE_PACKET_TX     = 0x08,
-    LORA_PROTOCOL_TYPE_GET_RSSI_INST = 0x09,
+    LORA_PROTOCOL_TYPE_ACK                 = 0x00,
+    LORA_PROTOCOL_TYPE_NACK                = 0x01,
+    LORA_PROTOCOL_TYPE_GET_MODE            = 0x02,
+    LORA_PROTOCOL_TYPE_SET_MODE            = 0x03,
+    LORA_PROTOCOL_TYPE_GET_CONFIG          = 0x04,
+    LORA_PROTOCOL_TYPE_SET_CONFIG          = 0x05,
+    LORA_PROTOCOL_TYPE_GET_STATUS          = 0x06,
+    LORA_PROTOCOL_TYPE_PACKET_RX           = 0x07,
+    LORA_PROTOCOL_TYPE_PACKET_TX           = 0x08,
+    LORA_PROTOCOL_TYPE_GET_RSSI_INST       = 0x09,
+    LORA_PROTOCOL_TYPE_GET_FREQUENCY_ERROR = 0x0A,
 } lora_protocol_packet_type_t;
 
 typedef enum {
@@ -85,6 +86,10 @@ typedef struct {
 } __attribute__((packed)) lora_protocol_lora_packet_t;
 
 typedef struct {
+    float last_frequency_error_hz;
+} __attribute__((packed)) lora_protocol_frequency_error_params_t;
+
+typedef struct {
     uint32_t sequence_number;
     uint32_t type;  // lora_protocol_packet_type_t
 } __attribute__((packed)) lora_protocol_header_t;
@@ -108,6 +113,9 @@ typedef struct {
     // Single packet storage for transaction responses
     uint8_t lora_packet_buffer[sizeof(uint32_t) + 512];
     size_t  lora_packet_size;
+
+    // Frequency offset
+    float last_frequency_error_hz;
 } lora_handle_t;
 
 // Functions
@@ -129,3 +137,5 @@ esp_err_t lora_send_packet(lora_handle_t* handle, const lora_protocol_lora_packe
 esp_err_t lora_receive_packet(lora_handle_t* handle, lora_protocol_lora_packet_t* out_packet, TickType_t timeout);
 
 esp_err_t lora_get_rssi_inst(lora_handle_t* handle, float* out_rssi);
+
+esp_err_t lora_get_frequency_error(lora_handle_t* handle, float* out_frequency_error);

@@ -372,13 +372,19 @@ static void lora_radio_read_data(lora_handle_t* handle) {
         return;
     }
 
-    res =
-        sx126x_get_packet_status_lora(&handle->driver_handle, &lora_packet.stats.rssi_pkt_raw,
-                                      (uint8_t*)&lora_packet.stats.snr_pkt_raw, &lora_packet.stats.signal_rssi_pkt_raw);
+    float snr_pkt_db         = 0;
+    float rssi_pkt_dbm       = 0;
+    float signal_rssi_pkt_db = 0;
+
+    res = sx126x_get_packet_status_lora(&handle->driver_handle, &snr_pkt_db, &rssi_pkt_dbm, &signal_rssi_pkt_db);
     if (res != ESP_OK) {
         ESP_LOGE(TAG, "Failed to read packet status from LoRa radio: %s", esp_err_to_name(res));
         return;
     }
+
+    lora_packet.stats.snr_pkt_raw         = -snr_pkt_db * 2.0f;
+    lora_packet.stats.rssi_pkt_raw        = rssi_pkt_dbm * 4.0f;
+    lora_packet.stats.signal_rssi_pkt_raw = -signal_rssi_pkt_db * 2.0f;
 
     res = sx126x_read_buffer(&handle->driver_handle, start_pointer, lora_packet.data, lora_packet.length);
     if (res != ESP_OK) {
@@ -386,12 +392,12 @@ static void lora_radio_read_data(lora_handle_t* handle) {
         return;
     }
 
-    float frequency_error_hz = 0;
-    res = sx126x_get_lora_frequency_error(&handle->driver_handle, bandwidth_int_to_enum(handle->lora_config.bandwidth), &frequency_error_hz);
+    res = sx126x_get_lora_frequency_error(&handle->driver_handle, bandwidth_int_to_enum(handle->lora_config.bandwidth),
+                                          &handle->last_frequency_error_hz);
     if (res != ESP_OK) {
         ESP_LOGE(TAG, "Failed to read frequency error from LoRa radio: %s", esp_err_to_name(res));
     } else {
-        ESP_LOGI(TAG, "Measured frequency error on received packet: %f Hz", frequency_error_hz);
+        ESP_LOGI(TAG, "Measured frequency error on received packet: %f Hz", handle->last_frequency_error_hz);
     }
 
     if (xQueueSend(handle->lora_packet_queue, &lora_packet, 0) != pdPASS) {
@@ -1207,4 +1213,12 @@ esp_err_t lora_get_rssi_inst(lora_handle_t* handle, float* out_rssi) {
     } else {
         return sx126x_get_rssi_inst(&handle->driver_handle, out_rssi);
     }
+}
+
+esp_err_t lora_get_frequency_error(lora_handle_t* handle, float* out_frequency_error) {
+    if (out_frequency_error == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    *out_frequency_error = handle->last_frequency_error_hz;
+    return ESP_OK;
 }
