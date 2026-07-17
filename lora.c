@@ -388,7 +388,12 @@ static void update_local_oscillator_offset(lora_handle_t* handle) {
     for (uint8_t i = 0; i < handle->frequency_error_history_count; i++) {
         sum += handle->frequency_error_history[i];
     }
-    handle->local_oscillator_offset_hz = sum / (float)handle->frequency_error_history_count;
+
+    if (handle->frequency_error_history_count >= 4) {
+        handle->local_oscillator_offset_hz = sum / (float)handle->frequency_error_history_count;
+    } else {
+        handle->local_oscillator_offset_hz = 0;
+    }
 
     float offset_threshold = 0.1 * (handle->lora_config.bandwidth * 1000);
 
