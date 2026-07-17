@@ -9,5 +9,5 @@ dependencies:
       - if: target == esp32p4
     version: ">=2.12.3"
   nicolaielectronics/sx126x:
-    version: "^0.1.0"
+    version: "^0.2.0"
 license: "MIT"
