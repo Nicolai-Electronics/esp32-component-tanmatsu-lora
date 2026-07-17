@@ -14,17 +14,18 @@
 #define LORA_FREQUENCY_ERROR_HISTORY_LENGTH 32
 
 typedef enum {
-    LORA_PROTOCOL_TYPE_ACK                 = 0x00,
-    LORA_PROTOCOL_TYPE_NACK                = 0x01,
-    LORA_PROTOCOL_TYPE_GET_MODE            = 0x02,
-    LORA_PROTOCOL_TYPE_SET_MODE            = 0x03,
-    LORA_PROTOCOL_TYPE_GET_CONFIG          = 0x04,
-    LORA_PROTOCOL_TYPE_SET_CONFIG          = 0x05,
-    LORA_PROTOCOL_TYPE_GET_STATUS          = 0x06,
-    LORA_PROTOCOL_TYPE_PACKET_RX           = 0x07,
-    LORA_PROTOCOL_TYPE_PACKET_TX           = 0x08,
-    LORA_PROTOCOL_TYPE_GET_RSSI_INST       = 0x09,
-    LORA_PROTOCOL_TYPE_GET_FREQUENCY_ERROR = 0x0A,
+    LORA_PROTOCOL_TYPE_ACK                  = 0x00,
+    LORA_PROTOCOL_TYPE_NACK                 = 0x01,
+    LORA_PROTOCOL_TYPE_GET_MODE             = 0x02,
+    LORA_PROTOCOL_TYPE_SET_MODE             = 0x03,
+    LORA_PROTOCOL_TYPE_GET_CONFIG           = 0x04,
+    LORA_PROTOCOL_TYPE_SET_CONFIG           = 0x05,
+    LORA_PROTOCOL_TYPE_GET_STATUS           = 0x06,
+    LORA_PROTOCOL_TYPE_PACKET_RX            = 0x07,
+    LORA_PROTOCOL_TYPE_PACKET_TX            = 0x08,
+    LORA_PROTOCOL_TYPE_GET_RSSI_INST        = 0x09,
+    LORA_PROTOCOL_TYPE_GET_FREQUENCY_OFFSET = 0x0A,
+    LORA_PROTOCOL_TYPE_SET_FREQUENCY_OFFSET = 0x0B,
 } lora_protocol_packet_type_t;
 
 typedef enum {
@@ -91,7 +92,11 @@ typedef struct {
     float last_frequency_error_hz;
     float local_oscillator_offset_hz;
     float applied_frequency_offset_hz;
-} __attribute__((packed)) lora_protocol_frequency_error_params_t;
+} __attribute__((packed)) lora_protocol_get_frequency_offset_params_t;
+
+typedef struct {
+    float frequency_offset_hz;
+} __attribute__((packed)) lora_protocol_set_frequency_offset_params_t;
 
 typedef struct {
     uint32_t sequence_number;
@@ -147,5 +152,6 @@ esp_err_t lora_receive_packet(lora_handle_t* handle, lora_protocol_lora_packet_t
 
 esp_err_t lora_get_rssi_inst(lora_handle_t* handle, float* out_rssi);
 
-esp_err_t lora_get_frequency_error(lora_handle_t* handle, float* out_frequency_error,
-                                   float* out_local_oscillator_offset, float* out_applied_offset);
+esp_err_t lora_get_frequency_offset(lora_handle_t* handle, float* out_frequency_error,
+                                    float* out_local_oscillator_offset, float* out_applied_offset);
+esp_err_t lora_set_frequency_offset(lora_handle_t* handle, float offset);

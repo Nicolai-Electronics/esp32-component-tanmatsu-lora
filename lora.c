@@ -361,16 +361,12 @@ static sx126x_lora_bandwidth_t bandwidth_int_to_enum(uint16_t bandwidth_int) {
 }
 
 static esp_err_t update_rf_frequency(lora_handle_t* handle) {
-    uint32_t target = handle->lora_config.frequency;
     if (handle->lora_config.use_automatic_correction) {
         // Update the required offset with the currently measured offset
-        handle->applied_frequency_offset_hz += handle->local_oscillator_offset_hz;
-
-        ESP_LOGI(TAG, "LoRa frequency offset: %0.2f Hz", handle->applied_frequency_offset_hz);
-
-        // Add the offset to the target frequency
-        target += handle->applied_frequency_offset_hz;
+        handle->applied_frequency_offset_hz -= handle->local_oscillator_offset_hz;
+        ESP_LOGI(TAG, "Updated LoRa frequency offset: %0.2f Hz", handle->applied_frequency_offset_hz);
     }
+    uint32_t target = handle->lora_config.frequency + handle->applied_frequency_offset_hz;
     return sx126x_set_rf_frequency(&handle->driver_handle, target);
 }
 
@@ -395,7 +391,7 @@ static void update_local_oscillator_offset(lora_handle_t* handle) {
         handle->local_oscillator_offset_hz = 0;
     }
 
-    float offset_threshold = 0.1 * (handle->lora_config.bandwidth * 1000);
+    float offset_threshold = 0.025 * (handle->lora_config.bandwidth * 1000);
 
     if (handle->lora_config.use_automatic_correction) {
         if (fabs(handle->local_oscillator_offset_hz) >= offset_threshold) {
@@ -403,7 +399,10 @@ static void update_local_oscillator_offset(lora_handle_t* handle) {
                      "LoRa oscillator offset is %0.2f Hz, above %0.2f Hz threshold. Correcting frequency setpoint...",
                      fabs(handle->local_oscillator_offset_hz), offset_threshold);
             update_rf_frequency(handle);
-        }
+        } /* else {
+             ESP_LOGI(TAG, "LoRa oscillator offset is %0.2f Hz, below %0.2f Hz threshold.",
+                      fabs(handle->local_oscillator_offset_hz), offset_threshold);
+         }*/
     }
 }
 
@@ -1265,18 +1264,18 @@ esp_err_t lora_get_rssi_inst(lora_handle_t* handle, float* out_rssi) {
     }
 }
 
-esp_err_t lora_get_frequency_error(lora_handle_t* handle, float* out_frequency_error,
-                                   float* out_local_oscillator_offset, float* out_applied_offset) {
+esp_err_t lora_get_frequency_offset(lora_handle_t* handle, float* out_frequency_error,
+                                    float* out_local_oscillator_offset, float* out_applied_offset) {
     if (handle == NULL) {
         return ESP_ERR_INVALID_ARG;
     }
     if (handle == remote_handle) {
         lora_protocol_header_t request = {
             .sequence_number = handle->lora_sequence_number,
-            .type            = LORA_PROTOCOL_TYPE_GET_FREQUENCY_ERROR,
+            .type            = LORA_PROTOCOL_TYPE_GET_FREQUENCY_OFFSET,
         };
-        uint8_t   response[sizeof(lora_protocol_header_t) + sizeof(lora_protocol_frequency_error_params_t)] = {0};
-        size_t    response_length                                                                           = 0;
+        uint8_t   response[sizeof(lora_protocol_header_t) + sizeof(lora_protocol_get_frequency_offset_params_t)] = {0};
+        size_t    response_length                                                                                = 0;
         esp_err_t result =
             lora_transaction(handle, (uint8_t*)&request, sizeof(request), response, &response_length, sizeof(response));
         if (result != ESP_OK) {
@@ -1284,23 +1283,23 @@ esp_err_t lora_get_frequency_error(lora_handle_t* handle, float* out_frequency_e
         }
         lora_protocol_header_t* header = (lora_protocol_header_t*)response;
         if (header->sequence_number != request.sequence_number) {
-            ESP_LOGE(TAG, "Get frequency error: response with unexpected sequence number %u", header->sequence_number);
+            ESP_LOGE(TAG, "Get frequency offset: response with unexpected sequence number %u", header->sequence_number);
             return ESP_FAIL;
         }
         if (header->type == LORA_PROTOCOL_TYPE_NACK) {
-            ESP_LOGE(TAG, "Get frequency error: received error response");
+            ESP_LOGE(TAG, "Get frequency offset: received error response");
             return ESP_FAIL;
         }
-        if (header->type != LORA_PROTOCOL_TYPE_GET_FREQUENCY_ERROR) {
-            ESP_LOGE(TAG, "Get frequency error: response with unexpected type %u", header->type);
+        if (header->type != LORA_PROTOCOL_TYPE_GET_FREQUENCY_OFFSET) {
+            ESP_LOGE(TAG, "Get frequency offset: response with unexpected type %u", header->type);
             return ESP_FAIL;
         }
-        if (response_length < sizeof(lora_protocol_header_t) + sizeof(lora_protocol_frequency_error_params_t)) {
-            ESP_LOGE(TAG, "Get frequency error: response with unexpected length");
+        if (response_length < sizeof(lora_protocol_header_t) + sizeof(lora_protocol_get_frequency_offset_params_t)) {
+            ESP_LOGE(TAG, "Get frequency offset: response with unexpected length");
             return ESP_FAIL;
         }
-        lora_protocol_frequency_error_params_t* params =
-            (lora_protocol_frequency_error_params_t*)(response + sizeof(lora_protocol_header_t));
+        lora_protocol_get_frequency_offset_params_t* params =
+            (lora_protocol_get_frequency_offset_params_t*)(response + sizeof(lora_protocol_header_t));
         if (out_frequency_error != NULL) {
             *out_frequency_error = params->last_frequency_error_hz;
         }
@@ -1320,6 +1319,47 @@ esp_err_t lora_get_frequency_error(lora_handle_t* handle, float* out_frequency_e
         if (out_applied_offset != NULL) {
             *out_applied_offset = handle->applied_frequency_offset_hz;
         }
+    }
+    return ESP_OK;
+}
+
+esp_err_t lora_set_frequency_offset(lora_handle_t* handle, float offset) {
+    if (handle == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    if (handle == remote_handle) {
+        uint8_t request[sizeof(lora_protocol_header_t) + sizeof(lora_protocol_set_frequency_offset_params_t)] = {0};
+        lora_protocol_header_t*                      request_header = (lora_protocol_header_t*)request;
+        lora_protocol_set_frequency_offset_params_t* request_parameters =
+            (lora_protocol_set_frequency_offset_params_t*)&request[sizeof(lora_protocol_header_t)];
+
+        request_header->sequence_number         = handle->lora_sequence_number;
+        request_header->type                    = LORA_PROTOCOL_TYPE_SET_FREQUENCY_OFFSET;
+        request_parameters->frequency_offset_hz = offset;
+
+        uint8_t   response[sizeof(lora_protocol_header_t)] = {0};
+        size_t    response_length                          = 0;
+        esp_err_t result =
+            lora_transaction(handle, (uint8_t*)&request, sizeof(request), response, &response_length, sizeof(response));
+        if (result != ESP_OK) {
+            return result;
+        }
+        lora_protocol_header_t* response_header = (lora_protocol_header_t*)response;
+        if (response_header->sequence_number != request_header->sequence_number) {
+            ESP_LOGE(TAG, "Set frequency offset: response with unexpected sequence number %u",
+                     response_header->sequence_number);
+            return ESP_FAIL;
+        }
+        if (response_header->type == LORA_PROTOCOL_TYPE_NACK) {
+            ESP_LOGE(TAG, "Set frequency offset: received error response");
+            return ESP_FAIL;
+        }
+        if (response_header->type != LORA_PROTOCOL_TYPE_ACK) {
+            ESP_LOGE(TAG, "Set frequency offset: response with unexpected type %u", response_header->type);
+            return ESP_FAIL;
+        }
+    } else {
+        handle->applied_frequency_offset_hz = offset;
     }
     return ESP_OK;
 }
