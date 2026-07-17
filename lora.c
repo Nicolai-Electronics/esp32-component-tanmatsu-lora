@@ -1219,6 +1219,41 @@ esp_err_t lora_get_frequency_error(lora_handle_t* handle, float* out_frequency_e
     if (out_frequency_error == NULL) {
         return ESP_ERR_INVALID_ARG;
     }
-    *out_frequency_error = handle->last_frequency_error_hz;
+    if (handle == remote_handle) {
+        lora_protocol_header_t request = {
+            .sequence_number = handle->lora_sequence_number,
+            .type            = LORA_PROTOCOL_TYPE_GET_FREQUENCY_ERROR,
+        };
+        uint8_t   response[sizeof(lora_protocol_header_t) + sizeof(lora_protocol_frequency_error_params_t)] = {0};
+        size_t    response_length                                                                           = 0;
+        esp_err_t result =
+            lora_transaction(handle, (uint8_t*)&request, sizeof(request), response, &response_length, sizeof(response));
+        if (result != ESP_OK) {
+            return result;
+        }
+        lora_protocol_header_t* header = (lora_protocol_header_t*)response;
+        if (header->sequence_number != request.sequence_number) {
+            ESP_LOGE(TAG, "RSSI inst: response with unexpected sequence number %u", header->sequence_number);
+            return ESP_FAIL;
+        }
+        if (header->type == LORA_PROTOCOL_TYPE_NACK) {
+            ESP_LOGE(TAG, "RSSI inst: received error response");
+            return ESP_FAIL;
+        }
+        if (header->type != LORA_PROTOCOL_TYPE_GET_FREQUENCY_ERROR) {
+            ESP_LOGE(TAG, "RSSI inst: response with unexpected type %u", header->type);
+            return ESP_FAIL;
+        }
+        if (response_length < sizeof(lora_protocol_header_t) + sizeof(lora_protocol_frequency_error_params_t)) {
+            ESP_LOGE(TAG, "RSSI inst: response with unexpected length");
+            return ESP_FAIL;
+        }
+        lora_protocol_frequency_error_params_t* params =
+            (lora_protocol_frequency_error_params_t*)(response + sizeof(lora_protocol_header_t));
+        *out_frequency_error = params->last_frequency_error_hz;
+        return ESP_OK;
+    } else {
+        *out_frequency_error = handle->last_frequency_error_hz;
+    }
     return ESP_OK;
 }
