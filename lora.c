@@ -754,7 +754,7 @@ esp_err_t lora_get_config(lora_handle_t* handle, lora_protocol_config_params_t* 
         if (result != ESP_OK) {
             return result;
         }
-        if (response_length < sizeof(lora_protocol_header_t) + sizeof(lora_protocol_config_params_t)) {
+        if (response_length < sizeof(lora_protocol_header_t) + LORA_PROTOCOL_CONFIG_PARAMS_LEGACY_SIZE) {
             ESP_LOGE(TAG, "Invalid response length: %u\r\n", response_length);
             return ESP_FAIL;
         }
@@ -767,6 +767,7 @@ esp_err_t lora_get_config(lora_handle_t* handle, lora_protocol_config_params_t* 
             ESP_LOGE(TAG, "Invalid response type: %u\r\n", header->type);
             return ESP_FAIL;
         }
+
         lora_protocol_config_params_t* params =
             (lora_protocol_config_params_t*)(response + sizeof(lora_protocol_header_t));
         memcpy(out_config, params, sizeof(lora_protocol_config_params_t));

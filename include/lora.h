@@ -1,6 +1,7 @@
 #pragma once
 
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 #include "driver/gpio.h"
 #include "esp_err.h"
@@ -62,6 +63,8 @@ typedef struct {
     bool     use_dcdc;                    // Enable DC-DC converter
     bool     use_automatic_correction;    // Enable automatic frequency correction
 } __attribute__((packed)) lora_protocol_config_params_t;
+
+#define LORA_PROTOCOL_CONFIG_PARAMS_LEGACY_SIZE offsetof(lora_protocol_config_params_t, low_data_rate_optimization)
 
 typedef struct {
     uint16_t             errors;
