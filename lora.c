@@ -363,7 +363,16 @@ static sx126x_lora_bandwidth_t bandwidth_int_to_enum(uint16_t bandwidth_int) {
 static esp_err_t update_rf_frequency(lora_handle_t* handle) {
     if (handle->lora_config.use_automatic_correction) {
         // Update the required offset with the currently measured offset
-        handle->applied_frequency_offset_hz -= handle->local_oscillator_offset_hz;
+        float offset = handle->local_oscillator_offset_hz;
+        if (offset < -1000.0f) offset = -1000.0f;
+        if (offset > 1000.0f) offset = 1000.0f;
+        handle->applied_frequency_offset_hz -= offset;
+
+        // Reset counters
+        handle->local_oscillator_offset_hz    = 0;
+        handle->frequency_error_history_index = 0;
+        handle->frequency_error_history_count = 0;
+
         ESP_LOGI(TAG, "Updated LoRa frequency offset: %0.2f Hz", handle->applied_frequency_offset_hz);
     }
     uint32_t target = handle->lora_config.frequency + handle->applied_frequency_offset_hz;
@@ -1360,6 +1369,7 @@ esp_err_t lora_set_frequency_offset(lora_handle_t* handle, float offset) {
             return ESP_FAIL;
         }
     } else {
+        ESP_LOGI(TAG, "Applied new manually configured offset: %0.2f\r\n", offset);
         handle->applied_frequency_offset_hz = offset;
         return update_rf_frequency(handle);
     }
