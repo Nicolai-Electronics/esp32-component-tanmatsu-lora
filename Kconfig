@@ -1,0 +1,8 @@
+menu "ESP-HOSTED variant selection"
+
+    config USE_GENERIC_ESP_HOSTED
+        bool "Use generic ESP-HOSTED instead of the Tanmatsu variant"
+        depends on IDF_TARGET_ESP32P4
+        default n
+
+endmenu
