@@ -3,7 +3,7 @@ url: https://github.com/nicolai-electronics/esp32-component-tanmatsu-lora
 repository: git://git@github.com:nicolai-electronics/esp32-component-tanmatsu-lora.git
 issues: https://github.com/nicolai-electronics/esp32-component-tanmatsu-lora/issues
 dependencies:
-  idf: ">=5.5"
+  idf: ">=5.5.1"
   nicolaielectronics/esp-hosted-tanmatsu:
     rules:
       - if: "target == esp32p4  && $CONFIG{USE_GENERIC_ESP_HOSTED} == False"
