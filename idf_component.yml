@@ -13,5 +13,5 @@ dependencies:
       - if: "target == esp32p4  && $CONFIG{USE_GENERIC_ESP_HOSTED} == True"
     version: "=2.12.3"
   nicolaielectronics/sx126x:
-    version: "^0.2.0"
+    version: "^0.3.0"
 license: "MIT"
